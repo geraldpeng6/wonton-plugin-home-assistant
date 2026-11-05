@@ -259,8 +259,11 @@ p = json.loads(sys.argv[1])
 say = lambda line: print(line, file=sys.stderr)
 say(f"{p['title']}  {p['id']} {p['version']}")
 for line in p["permissions"]:
-    mark = "（高权限）" if line["high"] else ""
+    risk = line.get("risk")
+    mark = f"（{ {'high': '高权限', 'very_high': '很高权限', 'highest': '最高权限'}.get(risk, '最高权限')}）" if risk else ""
     say(f"  权限：{line['text']}（{line['permission']}）{mark}")
+    if line.get("notice"):
+        say(f"    {line['notice']}")
 if not p["permissions"]:
     say("  不需要权限")
 for notice in p["notices"]:
@@ -372,13 +375,15 @@ plugin_web_url() {
   local id="$1" list
   list="$(api GET /_wonton/api/plugins)" || die "列不出插件：$(error_text "$list")"
   python3 - "$list" "$id" <<'PY'
+import urllib.parse
 import json, sys
 plugin = next((p for p in json.loads(sys.argv[1])["plugins"] if p["id"] == sys.argv[2]), None)
 if plugin is None:
     sys.exit(f"{sys.argv[2]} 还没装：先 scripts/dev.sh install")
 if not plugin.get("web_url"):
     sys.exit(f"{sys.argv[2]} 没有网页入口（清单里没写 webui）")
-print(plugin["web_url"])
+parts = urllib.parse.urlsplit(plugin["web_url"])
+print(f"{parts.scheme}://{parts.netloc}")
 PY
 }
 

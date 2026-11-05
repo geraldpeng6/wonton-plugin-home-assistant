@@ -1,11 +1,25 @@
-# 云吞插件模板
+# Home Assistant 云吞插件
 
-云吞（Wonton）的插件就是一个 `docker-compose.yml`，顶层多一个 `x-wonton` 字段，写明插件在云吞里的身份、网页入口和要的
-权限。一个插件一个 Git 仓库，仓库根目录就是插件包，发布就是打 tag。用户在 App 里装上插件，核心按清单起容器、接好登录，
-插件的网页在 App 里作为小程序打开。
+Home Assistant 的云吞插件：宿主网络发现局域网设备，配置和集成保存在插件数据目录。需要支持
+`network.host` 和网页中继的核心，清单采用 spec 0.6。下面保留模板的编写指南；宿主网络等新能力以
+[公开规范](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md)为准。
 
-这个仓库是模板：一个能装上的示例插件（nginx 显示一个向用户问好的网页），加上检查、开发环境和发布三个脚本。从这个模板
-新建仓库，照着下面把示例换成你的应用。
+Home Assistant 2026.10.4 没有内置 OIDC。安装通过官方 onboarding 接口创建主人的账号，密码由核心随机生成，
+不显示或写入日志；只信任 `127.0.0.1/32`，打开网页不再要求密码。宿主进程和其他宿主网络容器也可使用这个入口，
+回环信任不能隔离这些进程。不要把它当作多租户主机的身份边界。
+
+Home Assistant 的 HTTP YAML 配置会进入五分钟待确认状态，所以首次启动预写 `.storage/http` 的 stable 配置，
+不保留 HTTP YAML 段。已有数据不覆盖。时区经 `!env_var TZ` 读取核心注入值；中文由上游接口设置，分析偏好首次写为关闭。
+
+核心网关发送 `X-Forwarded-For`；Home Assistant 未启用可信代理时返回 400，而其 trusted_networks 又拒绝可信代理。
+因此用官方 nginx（BSD-2-Clause）的配置去掉转发头，保留 Host 和 WebSocket，不注入身份、不自研侧车。
+Home Assistant 和 nginx 分别只监听 `127.0.0.1:8123`、`127.0.0.1:18123`，核心经 unix 中继连接后者。
+8123 被占时启动明确失败，不换端口或假装健康。
+
+DHCP 发现声明 `NET_RAW`，不使用 `privileged`。蓝牙所需的只读 `/run/dbus` 挂载不在规范允许范围，
+因此不申请无法完整使用的 `NET_ADMIN`，真实蓝牙、USB 和串口设备未验证。
+
+图标使用 Home Assistant 官方原版标志，未改色或变形；来源、许可全文和商标说明见 [NOTICE](NOTICE)。
 
 ## 准备
 
