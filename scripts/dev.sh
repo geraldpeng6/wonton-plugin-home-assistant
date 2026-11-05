@@ -259,8 +259,11 @@ p = json.loads(sys.argv[1])
 say = lambda line: print(line, file=sys.stderr)
 say(f"{p['title']}  {p['id']} {p['version']}")
 for line in p["permissions"]:
-    mark = "（高权限）" if line["high"] else ""
+    risk = line.get("risk")
+    mark = f"（{ {'high': '高权限', 'very_high': '很高权限', 'highest': '最高权限'}.get(risk, '最高权限')}）" if risk else ""
     say(f"  权限：{line['text']}（{line['permission']}）{mark}")
+    if line.get("notice"):
+        say(f"    {line['notice']}")
 if not p["permissions"]:
     say("  不需要权限")
 for notice in p["notices"]:

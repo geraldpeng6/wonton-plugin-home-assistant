@@ -1,61 +1,135 @@
-# 示例插件：nginx 显示一个网页，向登录的人问好。照着 README 的“写插件”换成你的应用。
+# Home Assistant：宿主网络用于 mDNS、SSDP 和 DHCP 发现；网页只监听回环，由核心中继接入网关。
 services:
-  web:
-    # 镜像按摘要固定（多架构镜像写清单列表的摘要），标签只给人看。
-    image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
-    # 包里的文件经 configs 交给容器（核心在启动前写进去），不能用卷挂载。
+  init:
+    image: &home-assistant ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133
+    user: "${PUID}:${PGID}"
+    entrypoint: ["python3", "/wonton/seed.py"]
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
     configs:
-      - source: site
-        target: /etc/nginx/conf.d/default.conf
-      - source: page
-        target: /usr/share/nginx/html/index.html
+      - source: seed
+        target: /wonton/seed.py
+      - source: configuration
+        target: /wonton/configuration.yaml
+    network_mode: none
+    restart: "no"
+
+  home-assistant:
+    image: *home-assistant
+    # 上游 /init 的 s6 启动链需要 root；不使用 privileged，DHCP 只加 NET_RAW。
+    entrypoint: ["python3", "/wonton/start.py"]
+    configs:
+      - source: start
+        target: /wonton/start.py
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    network_mode: host
+    cap_add:
+      - NET_RAW
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/manifest.json"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      start_interval: 2s
+
+  onboarding:
+    image: *home-assistant
+    entrypoint: ["python3", "/wonton/onboard.py"]
+    network_mode: host
+    restart: "no"
+    environment:
+      OWNER_NAME: ${WONTON_OWNER_NAME}
+      OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+    depends_on:
+      home-assistant:
+        condition: service_healthy
+    configs:
+      - source: onboarding
+        target: /wonton/onboard.py
+
+  web:
+    # 官方 nginx（BSD-2-Clause）：HA 拒绝带 XFF 的非代理请求，可信代理又不能用于 trusted_networks。
+    # 只去掉转发头，不注入身份；两个监听端口都限定回环，核心仍负责网关认证和 unix 中继。
+    image: nginx:1.30.6-alpine@sha256:0e52bd054126cdc040b1276c0af347aeb02a41b9cfe305d6094767ac30e97949
+    network_mode: host
+    depends_on:
+      onboarding:
+        condition: service_completed_successfully
+    configs:
+      - source: web
+        target: /etc/nginx/conf.d/default.conf
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:18123/manifest.json"]
       interval: 30s
       timeout: 5s
       start_period: 30s
       start_interval: 1s
 
 configs:
-  site:
+  seed:
+    file: init/seed.py
+  start:
+    file: init/start.py
+  onboarding:
+    file: init/onboard.py
+  web:
     file: web/default.conf
-  page:
-    file: web/index.html
+  configuration:
+    file: config/configuration.yaml
 
 x-wonton:
-  spec: "0.4"
-  # 换成你自己的：反向域名形式，装上以后不能改。
-  id: app.example.hello
-  version: 0.1.1
+  spec: "0.6"
+  id: io.home-assistant.home-assistant
+  version: 0.1.0
   kind: app
-  title: { zh: 你好, en: Hello }
-  description: { zh: 向登录的人问好的示例网页, en: An example page that greets whoever is signed in }
+  title: { zh: Home Assistant, en: Home Assistant }
+  description:
+    zh: 管理智能家居设备、自动化和家庭仪表盘
+    en: Manage smart home devices, automations, and dashboards
   icon: icon.svg
   notices: [NOTICE]
   screenshots: [screenshots/home.png]
-  author: { name: Example }
-  homepage: https://nginx.org
-  # 应用（这里是 nginx）的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
-  license: BSD-2-Clause
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://www.home-assistant.io
+  license: Apache-2.0
   tags:
-    zh: [工具]
-    en: [Tools]
+    zh: [智能家居, 自动化]
+    en: [Smart Home, Automation]
   about:
     zh: |
-      一个示例网页：登录以后，页面会向你问好。新建插件时可以照着改。
+      Home Assistant 是一个开源智能家居平台：接入设备，创建自动化，并在仪表盘中查看和控制家里的状态。
+
+      插件使用宿主网络来支持局域网发现。网页只监听 127.0.0.1，由云吞核心中继接入；宿主网络仍意味着插件可以访问本机服务和局域网。DHCP 发现需要 NET_RAW。蓝牙完整接入还需要容器规范尚未允许的 /run/dbus 挂载，因此未声明蓝牙权限。
+
+      安装时通过上游 onboarding 接口创建主人的账号，密码由核心随机生成，打开网页后经回环可信网络免密码登录。默认中文，分析和遥测默认关闭，配置与集成保存在插件数据目录。宿主进程和其他宿主网络容器也能使用这个免密码入口；不要在不信任的共用主机上启用。
     en: |
-      An example page: once you are signed in, the page says hello. Copy it as a starting point for a new plugin.
-  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+      Home Assistant is an open-source smart home platform for connecting devices, building automations, and viewing and controlling the home from dashboards.
+
+      This plugin uses the host network for LAN discovery. The web server listens only on 127.0.0.1 and is reached through the Wonton core relay; host networking still lets the plugin reach services on the host and the LAN. DHCP discovery needs NET_RAW. Full Bluetooth support also needs a /run/dbus mount that the plugin spec does not allow, so Bluetooth permissions are not declared.
+
+      Upstream onboarding creates the owner's account using a password generated by Wonton. Loopback trusted-network authentication opens the app without asking for that password. Chinese is the default language, analytics are disabled, and configuration and integrations persist in the plugin data. Host processes and other host-network containers can also use this passwordless entry; do not enable it on an untrusted shared host.
+  release_notes:
+    zh: 首个版本：宿主网络发现、回环网页中继、自动初始化和数据持久化。
+    en: "First release: host-network discovery, loopback web relay, automated initialization, and persistent data."
   webui:
     service: web
-    port: 80
-    # 应用不认 OIDC 时，由网关在请求上加上用户名（README 的“网页入口和登录”）。
-    sso: proxy
-    proxy:
-      headers:
-        Remote-User: "{user}"
-  permissions: []
-  # 上游 nginx 官方镜像，amd64 和 arm64 都有；上游没写最低内存，按本机空闲实测取整（实测约 24M，取 64M）。
+    port: 18123
+    sso: none
+  permissions:
+    - network.host
+    - cap.NET_RAW
+    - owner.identity
+  secrets:
+    owner_password:
+      generate: { bytes: 32 }
   requirements:
     arch: [amd64, arm64]
-    memory: 64M
+    memory: 1G

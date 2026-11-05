@@ -1,0 +1,16 @@
+default_config:
+
+homeassistant:
+  language: zh-Hans
+  time_zone: !env_var TZ
+  unit_system: metric
+  auth_providers:
+    - type: trusted_networks
+      trusted_networks:
+        - 127.0.0.1/32
+      allow_bypass_login: true
+    - type: homeassistant
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
