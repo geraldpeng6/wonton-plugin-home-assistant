@@ -1,7 +1,7 @@
 # Home Assistant：宿主网络用于 mDNS、SSDP 和 DHCP 发现；网页只监听回环，由核心中继接入网关。
 services:
   init:
-    image: &home-assistant ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133
+    image: ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133
     user: "${PUID}:${PGID}"
     entrypoint: ["python3", "/wonton/seed.py"]
     environment:
@@ -17,7 +17,7 @@ services:
     restart: "no"
 
   home-assistant:
-    image: *home-assistant
+    image: ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133
     # 上游 /init 的 s6 启动链需要 root；不使用 privileged，DHCP 只加 NET_RAW。
     entrypoint: ["python3", "/wonton/start.py"]
     configs:
@@ -41,7 +41,7 @@ services:
       start_interval: 2s
 
   onboarding:
-    image: *home-assistant
+    image: ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133
     entrypoint: ["python3", "/wonton/onboard.py"]
     network_mode: host
     restart: "no"
