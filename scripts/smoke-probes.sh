@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # 请求和 WebSocket 都走核心网关；上游镜像自带 aiohttp（Apache-2.0），宿主不用安装依赖。
 web_assert() { grep -q '<home-assistant'; }
 
