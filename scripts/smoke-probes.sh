@@ -2,6 +2,51 @@
 # 请求和 WebSocket 都走核心网关；上游镜像自带 aiohttp（Apache-2.0），宿主不用安装依赖。
 web_assert() { grep -q '<home-assistant'; }
 
+# 可信回环登录链换 HA token：请求经网关转发，HA 只见回环，trusted_networks 直接认出主人，
+# 用授权码换 access_token 后才能调 HA 自己的 API。immich/homebox 走的是各自的 OAuth/OIDC 链。
+_ha_token() {
+  local base client flow resp
+  base="${SMOKE_WEB_URL%/}"
+  client="$base/"
+  flow="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
+    -d '{"client_id":"'"$client"'","redirect_uri":"'"$client"'","handler":["trusted_networks",null]}' \
+    "$SMOKE_WEB_URL/auth/login_flow")" || { echo "可信回环登录失败：$flow"; return 1; }
+  local code
+  code="$(jq -er '.result // empty' <<<"$flow")" || { echo "登录没有直接认出主人：$flow"; return 1; }
+  resp="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=authorization_code' --data-urlencode "client_id=$client" \
+    --data-urlencode "code=$code" "$SMOKE_WEB_URL/auth/token")" || { echo "换 token 失败：$resp"; return 1; }
+  jq -er '.access_token // empty' <<<"$resp" || { echo "token 响应里没有 access_token：$resp"; return 1; }
+}
+
+# 数据：一条真实用户数据——建自动化（落 automations.yaml，升级后还在），别名带随机标记；
+# 固定 id wonton_smoke，重复写是更新，不堆积。
+data_write() {
+  local marker token resp
+  [[ -n "${SMOKE_STATE:-}" ]] || { echo "SMOKE_STATE 没设"; return 1; }
+  marker="wonton-smoke-$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
+  token="$(_ha_token)" || return 1
+  resp="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -X POST \
+    -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d '{"alias":"'"$marker"'","trigger":[{"platform":"time","at":"03:33:33"}],"condition":[],"action":[{"action":"homeassistant.update_entity"}]}' \
+    "$SMOKE_WEB_URL/api/config/automation/config/wonton_smoke")" || { echo "建自动化失败：$resp"; return 1; }
+  printf '%s' "$marker" >"$SMOKE_STATE"
+}
+
+data_check() {
+  local marker token resp code body seen
+  [[ -n "${SMOKE_STATE:-}" ]] || { echo "SMOKE_STATE 没设"; return 1; }
+  marker="$(cat "$SMOKE_STATE")" || { echo "读不到 $SMOKE_STATE"; return 1; }
+  token="$(_ha_token)" || return 1
+  resp="$(curl -sS --noproxy '*' -w $'\n%{http_code}' -b "$SMOKE_JAR" -H "Authorization: Bearer $token" \
+    -H 'Accept: application/json' "$SMOKE_WEB_URL/api/config/automation/config/wonton_smoke")"
+  code="${resp##*$'\n'}"
+  body="${resp%$'\n'*}"
+  [[ "$code" == 200 ]] || { echo "自动化 wonton_smoke 读不到（HTTP $code）：$(head -c 200 <<<"$body")"; return 1; }
+  seen="$(jq -r '.alias // empty' <<<"$body")"
+  [[ "$seen" == "$marker" ]] || { echo "自动化别名对不上：写了 $marker，读到 $seen"; return 1; }
+}
+
 identity_check() {
   local cookie container
   cookie="$(python3 - "$SMOKE_JAR" "$SMOKE_WEB_URL" <<'PY'

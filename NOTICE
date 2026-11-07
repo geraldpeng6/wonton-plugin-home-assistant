@@ -1,8 +1,8 @@
 Runtime software
 ================
 
-Home Assistant 2026.10.4 is provided by the upstream official image under Apache-2.0:
-https://github.com/home-assistant/core/blob/2026.10.4/LICENSE.md
+Home Assistant 2026.11.0 is provided by the upstream official image under Apache-2.0:
+https://github.com/home-assistant/core/blob/2026.11.0/LICENSE.md
 The onboarding and smoke scripts use aiohttp already included in that image (Apache-2.0):
 https://github.com/aio-libs/aiohttp/blob/master/LICENSE.txt
 The unmodified official nginx image is used for HTTP forwarding (BSD-2-Clause):
