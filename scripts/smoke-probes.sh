@@ -12,25 +12,29 @@ _gateway_login() { # <base>
   local token
   token="${E2E_TOKEN:-${SMOKE_TOKEN:-}}"
   [[ -n "$token" ]] || { echo "没有主人令牌"; return 1; }
-  curl -sS --noproxy '*' -o /dev/null -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
-    --data-urlencode "token=$token" "$(_core_base)/_wonton/login" &&
-    curl -sS --noproxy '*' -o /dev/null -L -b "$SMOKE_JAR" -c "$SMOKE_JAR" -H 'Accept: text/html' "${1%/}/"
+  echo "[dw] 步骤1 核心登录：POST $(_core_base)/_wonton/login" >&2
+  curl -sS --noproxy '*' -o /dev/null -w '[dw] 步骤1 结果 HTTP %{http_code}\n' -b "$SMOKE_JAR" -c "$SMOKE_JAR" \
+    --data-urlencode "token=$token" "$(_core_base)/_wonton/login" || { echo "[dw] 步骤1 curl 失败 rc=$?" >&2; return 1; }
+  echo "[dw] 步骤2 插件入口：GET ${1%/}/" >&2
+  curl -sS --noproxy '*' -o /dev/null -w '[dw] 步骤2 结果 HTTP %{http_code} 重定向 %{num_redirects} 次 最终 %{url_effective}\n' -L -b "$SMOKE_JAR" -c "$SMOKE_JAR" -H 'Accept: text/html' "${1%/}/" || { echo "[dw] 步骤2 curl 失败 rc=$?" >&2; return 1; }
 }
 
 _ha_token() {
   local base client flow resp
   base="${SMOKE_WEB_URL%/}"
   client="$base/"
-  _gateway_login "$base" || { echo "网关会话建不了"; return 1; }
+  _gateway_login "$base" || { echo "[dw] 网关会话建不了" >&2; return 1; }
+  echo "[dw] 步骤3 登录流：POST $base/auth/login_flow" >&2
   flow="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/json' \
     -d '{"client_id":"'"$client"'","redirect_uri":"'"$client"'","handler":["trusted_networks",null]}' \
-    "$SMOKE_WEB_URL/auth/login_flow")" || { echo "可信回环登录失败：$flow"; return 1; }
+    "$SMOKE_WEB_URL/auth/login_flow")" || { echo "[dw] 步骤3 可信回环登录失败：$flow" >&2; return 1; }
   local code
-  code="$(jq -er '.result // empty' <<<"$flow")" || { echo "登录没有直接认出主人：$flow"; return 1; }
+  code="$(jq -er '.result // empty' <<<"$flow")" || { echo "[dw] 登录没有直接认出主人：$flow" >&2; return 1; }
+  echo "[dw] 步骤4 换 token：POST $base/auth/token" >&2
   resp="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -H 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=authorization_code' --data-urlencode "client_id=$client" \
-    --data-urlencode "code=$code" "$SMOKE_WEB_URL/auth/token")" || { echo "换 token 失败：$resp"; return 1; }
-  jq -er '.access_token // empty' <<<"$resp" || { echo "token 响应里没有 access_token：$resp"; return 1; }
+    --data-urlencode "code=$code" "$SMOKE_WEB_URL/auth/token")" || { echo "[dw] 步骤4 换 token 失败：$resp" >&2; return 1; }
+  jq -er '.access_token // empty' <<<"$resp" || { echo "[dw] token 响应里没有 access_token：$resp" >&2; return 1; }
 }
 
 # 数据：一条真实用户数据——建自动化（落 automations.yaml，升级后还在），别名带随机标记；
@@ -40,10 +44,11 @@ data_write() {
   [[ -n "${SMOKE_STATE:-}" ]] || { echo "SMOKE_STATE 没设"; return 1; }
   marker="wonton-smoke-$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
   token="$(_ha_token)" || return 1
+  echo "[dw] 步骤5 建自动化：POST $SMOKE_WEB_URL/api/config/automation/config/wonton_smoke" >&2
   resp="$(curl -sS --noproxy '*' --fail-with-body -b "$SMOKE_JAR" -X POST \
     -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
     -d '{"alias":"'"$marker"'","trigger":[{"platform":"time","at":"03:33:33"}],"condition":[],"action":[{"action":"homeassistant.update_entity"}]}' \
-    "$SMOKE_WEB_URL/api/config/automation/config/wonton_smoke")" || { echo "建自动化失败：$resp"; return 1; }
+    "$SMOKE_WEB_URL/api/config/automation/config/wonton_smoke")" || { echo "[dw] 步骤5 建自动化失败：$resp" >&2; return 1; }
   printf '%s' "$marker" >"$SMOKE_STATE"
 }
 
