@@ -1,6 +1,6 @@
 # Home Assistant 云吞插件
 
-开发流程见[插件开发指南](https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md)。
+开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 Home Assistant 的云吞插件：宿主网络发现局域网设备，配置和集成保存在插件数据目录。需要支持
 `network.host` 和网页中继的核心，清单采用 spec 0.6。
