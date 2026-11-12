@@ -90,10 +90,10 @@ x-wonton:
   id: io.home-assistant.home-assistant
   version: 0.2.0
   kind: app
-  title: { zh: Home Assistant, en: Home Assistant }
+  title: { zh: 智能家居中控（Home Assistant）, en: Smart Home Hub (Home Assistant) }
   description:
-    zh: 管理智能家居设备、自动化和家庭仪表盘
-    en: Manage smart home devices, automations, and dashboards
+    zh: 像米家 App，但不挑牌子：把家里各品牌的智能设备放进一个界面控制，开灯、调空调，还能设“到家自动开灯”这样的联动。
+    en: 'One app for every smart device, whatever the brand: control lights and air conditioning in one place and set routines like "lights on when I get home".'
   icon: icon.svg
   notices: [NOTICE]
   screenshots: [screenshots/home.png]
