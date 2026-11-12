@@ -3,7 +3,7 @@
 开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 Home Assistant 的云吞插件：宿主网络发现局域网设备，配置和集成保存在插件数据目录。需要支持
-`network.host` 和网页中继的核心，清单采用 spec 0.6。
+`network.host` 和网页中继的核心，清单采用 spec 0.11。
 
 Home Assistant 2026.11.0 没有内置 OIDC。安装通过官方 onboarding 接口创建主人的账号，密码由核心随机生成，
 不显示或写入日志；只信任 `127.0.0.1/32`，打开网页不再要求密码。宿主进程和其他宿主网络容器也可使用这个入口，
